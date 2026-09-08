@@ -8,6 +8,10 @@ import Option from '../../../components/Option';
 import { Dropdown, DropdownOption } from '../../../components/Dropdown';
 import './styles.css';
 
+const validLinkPattern = new RegExp(
+  /(http(s)?:\/\/.)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*)/i
+);
+
 class LayoutComponent extends Component {
   static propTypes = {
     expanded: PropTypes.bool,
@@ -25,6 +29,7 @@ class LayoutComponent extends Component {
     linkTarget: '',
     linkTitle: '',
     linkTargetOption: this.props.config.defaultTargetOption,
+    validations: { linkTitleValid: false, linkTargetValid: false },
   };
 
   componentDidUpdate(prevProps) {
@@ -34,9 +39,26 @@ class LayoutComponent extends Component {
         linkTarget: '',
         linkTitle: '',
         linkTargetOption: this.props.config.defaultTargetOption,
+        validations: { linkTitleValid: false, linkTargetValid: false },
       });
     }
   }
+
+  validateLink = (linkProp, value) => {
+    const {
+      config: { allowRelative },
+    } = this.props;
+    switch (linkProp) {
+      case 'linkTitle':
+        return !!value;
+      case 'linkTarget':
+        return allowRelative
+          ? !!value
+          : !!value && validLinkPattern.test(value);
+      default:
+        return true;
+    }
+  };
 
   removeLink = () => {
     const { onChange } = this.props;
@@ -44,15 +66,27 @@ class LayoutComponent extends Component {
   };
 
   addLink = () => {
-    const { onChange } = this.props;
+    const {
+      config: { allowRelative },
+      onChange,
+    } = this.props;
     const { linkTitle, linkTarget, linkTargetOption } = this.state;
-    onChange('link', linkTitle, linkTarget, linkTargetOption);
+    const target =
+      !allowRelative && !/^https?:\/\//i.test(linkTarget)
+        ? `https://${linkTarget}`
+        : linkTarget;
+    onChange('link', linkTitle, target, linkTargetOption);
   };
 
   updateValue = event => {
-    this.setState({
-      [`${event.target.name}`]: event.target.value,
-    });
+    const { name, value } = event.target;
+    this.setState(state => ({
+      [`${name}`]: value,
+      validations: {
+        ...state.validations,
+        [`${name}Valid`]: this.validateLink(name, value),
+      },
+    }));
   };
 
   updateTargetOption = event => {
@@ -73,12 +107,18 @@ class LayoutComponent extends Component {
       currentState: { link, selectionText },
     } = this.props;
     const { linkTargetOption } = this.state;
+    const linkTitle = (link && link.title) || selectionText;
+    const linkTarget = (link && link.target) || '';
     onExpandEvent();
     this.setState({
       showModal: true,
-      linkTarget: (link && link.target) || '',
+      linkTarget,
       linkTargetOption: (link && link.targetOption) || linkTargetOption,
-      linkTitle: (link && link.title) || selectionText,
+      linkTitle,
+      validations: {
+        linkTitleValid: this.validateLink('linkTitle', linkTitle),
+        linkTargetValid: this.validateLink('linkTarget', linkTarget),
+      },
     });
   };
 
@@ -88,12 +128,18 @@ class LayoutComponent extends Component {
       currentState: { link, selectionText },
     } = this.props;
     const { linkTargetOption } = this.state;
+    const linkTitle = (link && link.title) || selectionText;
+    const linkTarget = link && link.target;
     doExpand();
     this.setState({
       showModal: true,
-      linkTarget: link && link.target,
+      linkTarget,
       linkTargetOption: (link && link.targetOption) || linkTargetOption,
-      linkTitle: (link && link.title) || selectionText,
+      linkTitle,
+      validations: {
+        linkTitleValid: this.validateLink('linkTitle', linkTitle),
+        linkTargetValid: this.validateLink('linkTarget', linkTarget),
+      },
     });
   };
 
@@ -103,7 +149,13 @@ class LayoutComponent extends Component {
       doCollapse,
       translations,
     } = this.props;
-    const { linkTitle, linkTarget, linkTargetOption } = this.state;
+    const {
+      linkTitle,
+      linkTarget,
+      linkTargetOption,
+      validations: { linkTitleValid, linkTargetValid },
+    } = this.state;
+    const linkIsValid = linkTitleValid && linkTargetValid;
     return (
       <div
         className={classNames('rdw-link-modal', popupClassName)}
@@ -114,7 +166,10 @@ class LayoutComponent extends Component {
         </label>
         <input
           id="linkTitle"
-          className="rdw-link-modal-input"
+          className={classNames('rdw-link-modal-input', {
+            valid: linkTitleValid,
+            invalid: !linkTitleValid,
+          })}
           onChange={this.updateValue}
           onBlur={this.updateValue}
           name="linkTitle"
@@ -125,7 +180,10 @@ class LayoutComponent extends Component {
         </label>
         <input
           id="linkTarget"
-          className="rdw-link-modal-input"
+          className={classNames('rdw-link-modal-input', {
+            valid: linkTargetValid,
+            invalid: !linkTargetValid,
+          })}
           onChange={this.updateValue}
           onBlur={this.updateValue}
           name="linkTarget"
@@ -150,7 +208,7 @@ class LayoutComponent extends Component {
           <button
             className="rdw-link-modal-btn"
             onClick={this.addLink}
-            disabled={!linkTarget || !linkTitle}
+            disabled={!linkIsValid}
           >
             {translations['generic.add']}
           </button>
